@@ -481,7 +481,12 @@ Base.@propagate_inbounds function _getindex(A::DEIntegrator, ::ScalarSymbolic, s
     elseif is_independent_variable(A, sym)
         return A.t
     elseif is_observed(A, sym)
-        return SymbolicIndexingInterface.observed(A, sym)(A.u, A.p, A.t)
+        obs = SymbolicIndexingInterface.observed(A, sym)
+        if A.f isa DAEFunction
+            return obs(A.du, A.u, A.p, A.t)
+        else
+            return obs(A.u, A.p, A.t)
+        end
     else
         error("Tried to index integrator with a Symbol that was not found in the system.")
     end

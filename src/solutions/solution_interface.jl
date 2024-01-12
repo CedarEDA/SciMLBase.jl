@@ -62,6 +62,59 @@ Base.@propagate_inbounds function Base.getindex(A::AbstractTimeseriesSolution, :
     return A.u[:]
 end
 
+# hack to give DAE observeds du# hack to give DAE observeds du
+Base.@propagate_inbounds function RecursiveArrayTools._getindex(A::DAESolution, ::ScalarSymbolic, ::SymbolicIndexingInterface.SymbolicTypeTrait, sym)
+    if is_independent_variable(A, sym)
+        return A.t
+    elseif is_variable(A, sym)
+        if constant_structure(A)
+            return getindex.(A.u, variable_index(A, sym))
+        else
+            return getindex.(A.u, variable_index.((A,), (sym,), eachindex(A.t)))
+        end
+    elseif is_parameter(A, sym)
+        Base.depwarn("Indexing with parameters is deprecated. Use `getp(A, $sym)` for parameter indexing.", :parameter_getindex)
+        return getp(A, sym)(A)
+    elseif is_observed(A, sym)
+        return SymbolicIndexingInterface.observed(A, sym).(A.du, A.u, (parameter_values(A),), A.t)
+    else
+        # NOTE: this is basically just for LabelledArrays. It's better if this
+        # were an error. Should we make an extension for LabelledArrays handling
+        # this case?
+        return getindex.(A.u, sym)
+    end
+end
+function RecursiveArrayTools._getindex(A::DAESolution, ::ScalarSymbolic, ::SymbolicIndexingInterface.SymbolicTypeTrait, sym, args...)
+    if is_independent_variable(A, sym)
+        return A.t[args...]
+    elseif is_variable(A, sym)
+        return A[sym][args...]
+    elseif is_observed(A, sym)
+        du = A.du[args...]
+        u = A.u[args...]
+        t = A.t[args...]
+        observed_fn = SymbolicIndexingInterface.observed(A, sym)
+        if t isa AbstractArray
+            return observed_fn.(du, u, (parameter_values(A),), t)
+        else
+            return observed_fn(du, u, parameter_values(A), t)
+        end
+    else
+        error("$sym is not a variable or observed")
+    end
+end
+Base.@propagate_inbounds function RecursiveArrayTools._getindex(A::DAESolution, ::ScalarSymbolic, ::SymbolicIndexingInterface.SymbolicTypeTrait, sym::Union{Tuple,AbstractArray})
+    if all(x -> is_parameter(A, x), sym)
+        Base.depwarn("Indexing with parameters is deprecated. Use `getp(A, $sym)` for parameter indexing.", :parameter_getindex)
+        return getp(A, sym)(A)
+    else
+        return [getindex.((A,), sym, i) for i in eachindex(A.t)]
+    end
+end
+Base.@propagate_inbounds function RecursiveArrayTools._getindex(A::DAESolution, ::ScalarSymbolic, ::SymbolicIndexingInterface.SymbolicTypeTrait, sym::Union{Tuple,AbstractArray}, args...)
+    return reduce(vcat, map(s -> A[s, args...]', sym))
+end
+
 Base.@propagate_inbounds function Base.getindex(A::AbstractNoTimeSolution, sym)
     if symbolic_type(sym) == ScalarSymbolic()
         if is_variable(A, sym)

@@ -48,7 +48,9 @@ Base.@propagate_inbounds function Base.getindex(prob::AbstractSciMLProblem, sym)
             return current_time(prob)
         elseif is_observed(prob, sym)
             obs = SymbolicIndexingInterface.observed(prob, sym)
-            if is_time_dependent(prob)
+            if prob.f isa DAEFunction
+                return obs(prob.du0, state_values(prob), parameter_values(prob), current_time(prob))
+            elseif is_time_dependent(prob)
                 return obs(state_values(prob), parameter_values(prob), current_time(prob))
             else
                 return obs(state_values(prob), parameter_values(prob))
